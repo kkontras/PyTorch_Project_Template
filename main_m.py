@@ -15,8 +15,8 @@ def main(config_path, default_config_path):
 
 
 parser = argparse.ArgumentParser(description="My Command Line Program")
-parser.add_argument('config', help="Number of config file")
-parser.add_argument('default_config', help="Number of config file")
+parser.add_argument('--config', help="Number of config file")
+parser.add_argument('--default_config', help="Number of config file")
 args = parser.parse_args()
 print(args)
 
