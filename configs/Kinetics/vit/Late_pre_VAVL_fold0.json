@@ -22,7 +22,7 @@
   },
 
   "model": {
-    "model_class": "ConcatClassifier_CREMAD_OGM_pre",
+    "model_class": "Encoder_Type_Model",
     "args": {
       "d_model": 512,
       "num_classes": 6,
