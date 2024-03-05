@@ -81,6 +81,8 @@ class Agent():
         if self.config.training_params.wandb_disable:
             self.wandb_run = wandb.init(reinit=True, project="balance", config=self.config, mode = "disabled", dir="/esat/smcdata/users/kkontras/Image_Dataset/no_backup/data/2021_data/wandb", name= self.config.model.save_dir.split("/")[-1][:-8])
         else:
+            #Here for dir create a folder on the drives that you can save a lot with the name wandb and put the path there.
+            #project = the project you created through the wandb website.
             self.wandb_run = wandb.init(reinit=True, project="balance", config=self.config, dir="/esat/smcdata/users/kkontras/Image_Dataset/no_backup/data/2021_data/wandb", name= self.config.model.save_dir.split("/")[-1][:-8] )
 
     def get_loss(self):
@@ -93,16 +95,12 @@ class Agent():
         )
 
     def run(self):
-        """
-        The main operator
-        :return:
-        """
+
         try:
             if self.config.model.load_ongoing:
                 self.mem_loader.sleep_load()
 
             self.accelerate_components()
-                # self.validator_tester.sleep_test()
 
             self.trainer.train_steps()
 
@@ -111,14 +109,10 @@ class Agent():
             return
 
     def finalize(self):
-        """
-        Finalizes all the operations of the 2 Main classes of the process, the operator and the data loader
-        :return:
-        """
+
         self.logger.info("We are in the final state.")
 
         self.mem_loader.load_best_model()
-        # self.best_model = self.accelerator.prepare(self.best_model)
         self.accelerator.wait_for_everyone()
         if self.accelerator.is_main_process:
             self.validator_tester.validate(test_set=False)
