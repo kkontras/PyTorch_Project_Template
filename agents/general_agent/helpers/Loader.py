@@ -2,19 +2,12 @@ import torch
 import torch.nn as nn
 
 from models.OGM_Model import *
-from models.sthsth_models import *
-from models.Mosei_Models import *
 
 from colorama import Fore, Back, Style
 import torch.optim as optim
 from utils.schedulers.no_scheduler import No_Scheduler
 from utils.schedulers.warmup_scheduler import WarmupScheduler
 import wandb
-from models.ViViT_OGM import *
-from models.ViT_OGM import *
-TORCHDYNAMO_VERBOSE=1
-TORCH_LOGS = "+dynamo"
-import torch._dynamo
 import os
 
 torch._dynamo.config.suppress_errors = True

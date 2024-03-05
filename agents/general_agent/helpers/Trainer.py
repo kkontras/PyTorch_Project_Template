@@ -13,10 +13,7 @@ class Trainer():
     def __init__(self, agent):
         self.agent = agent
 
-        if self.agent.config.get("task", "classification") == "classification":
-            self.train_step_func = "train_one_step"
-        elif self.agent.config.get("task", "classification") == "regression":
-            self.train_step_func = "train_one_step_regression"
+        self.train_step_func = "train_one_step"
 
         self.this_train_step_func = getattr(self, self.train_step_func)
         self._get_loss_weights()
@@ -161,141 +158,6 @@ class Trainer():
 
             return this_output
 
-    def train_one_step_regression(self, served_dict, **kwargs):
-
-            data = {view: served_dict["data"][view].to(self.agent.device) for view in
-                                   served_dict["data"] if type(served_dict["data"][view]) is torch.Tensor }
-            data.update({view: data[view].float() for view in data if type(view) == int})
-
-            label = served_dict["label"].cuda()
-
-            self.agent.optimizer.zero_grad()
-
-            output = self.agent.model(data, return_features=True)
-
-
-            def calculate_loss(output, label):
-                total_loss =  torch.zeros(1).squeeze().to(output["preds"]["combined"].device)
-                output_losses, ce_loss = {}, {}
-
-                if hasattr(self.agent.config.model.args, "multi_loss"):
-                    for k, v in output["preds"].items():
-                        if k in self.agent.config.model.args.multi_loss.multi_supervised_w and self.agent.config.model.args.multi_loss.multi_supervised_w[k] != 0:
-                            ce_loss[k] = torch.nn.L1Loss()(v.squeeze(), label.to(v.device))
-                            total_loss += self.w_loss[k] * ce_loss[k]
-                            output_losses.update({"ce_loss_{}".format(k): self.w_loss[k] * ce_loss[k]})
-
-                return total_loss, output_losses
-
-            total_loss, output_losses = calculate_loss(output, label)
-
-            optstep_done = False
-            self.agent.accelerator.backward(total_loss)
-
-            for i in output_losses: output_losses[i] = output_losses[i].detach()
-
-
-            this_output = {}
-
-
-
-            total_loss =  total_loss.detach()
-            output_losses.update({"total": total_loss})
-            this_output.update({
-                    "loss": output_losses,
-                    "pred" : {pred: output["preds"][pred].detach() for pred in output["preds"]},
-                   "label": label.detach()
-                    })
-
-
-            return this_output
-
-    def train_one_step_shapley(self, served_dict, **kwargs):
-
-            data = {view: served_dict["data"][view].to(self.agent.device) for view in
-                                   served_dict["data"] if type(served_dict["data"][view]) is torch.Tensor }
-            data.update({view: data[view].float() for view in data if type(view) == int})
-            label = served_dict["label"].squeeze().type(torch.LongTensor).to(self.agent.device)
-
-            # self.agent.bias_infuser.get_gradients_on_zero_pass(copy.deepcopy(data), label, self.w_loss)
-
-            self.agent.optimizer.zero_grad()
-
-            output = {"preds":{}}
-
-            self.agent.model.eval()
-            this_data = copy.deepcopy(data)
-            # this_data[0] =  torch.zeros_like(this_data[0])
-            this_data[0] = this_data[0].mean(dim=0).unsqueeze(0).repeat(this_data[0].shape[0],1,1)
-            output["preds"]["combined_za"] = self.agent.model(this_data, return_features=True)["preds"]["combined"]
-
-            this_data = copy.deepcopy(data)
-            # this_data[1] = torch.zeros_like(this_data[1])
-            this_data[1] = this_data[1].mean(dim=0).unsqueeze(0).repeat(this_data[1].shape[0],1,1,1,1)
-            output["preds"]["combined_zv"] = self.agent.model(this_data, return_features=True)["preds"]["combined"]
-
-            this_data = copy.deepcopy(data)
-            # this_data[0] = torch.zeros_like(this_data[0])
-            # this_data[1] = torch.zeros_like(this_data[1])
-            this_data[0] = this_data[0].mean(dim=0).unsqueeze(0).repeat(this_data[0].shape[0],1,1)
-            this_data[1] = this_data[1].mean(dim=0).unsqueeze(0).repeat(this_data[1].shape[0],1,1,1,1)
-            output["preds"]["combined_zav"] = self.agent.model(this_data, return_features=True)["preds"]["combined"]
-            self.agent.model.train()
-
-            output["preds"].update(self.agent.model(data, return_features=True)["preds"])
-
-            def calculate_loss(output, label):
-                total_loss =  torch.zeros(1).squeeze().to(self.agent.device)
-                output_losses, ce_loss = {}, {}
-
-                if hasattr(self.agent.config.model.args, "multi_loss"):
-                    for k, v in output["preds"].items():
-                        if k in self.agent.config.model.args.multi_loss.multi_supervised_w and self.agent.config.model.args.multi_loss.multi_supervised_w[k] != 0:
-                            if len(label) > 0:  # TODO: Check if this one needs to be one or zero
-                                ce_loss[k] = self.agent.loss(v, label)
-                                total_loss += self.w_loss[k] * ce_loss[k]
-                                # ce_loss[k] = ce_loss[k]
-                                output_losses.update({"ce_loss_{}".format(k): self.w_loss[k] * ce_loss[k]})
-
-                return total_loss, output_losses
-
-            total_loss, output_losses = calculate_loss(output, label)
-
-            total_loss, output_losses, optstep_done = self.agent.bias_infuser.before_backward(total=total_loss, output_losses=output_losses,
-                                                                                              w_loss=self.w_loss, loss_fun = calculate_loss,
-                                                                                              data=data, label=label, output=output)
-
-            if total_loss.requires_grad and not optstep_done:
-                # total_loss.backward(retain_graph=True)
-                self.agent.accelerator.backward(total_loss)
-
-            else:
-                optstep_done = True
-
-            for i in output_losses: output_losses[i] = output_losses[i].detach().cpu().numpy()
-
-            if "c" in output["preds"] and "g" in output["preds"]:
-                self.agent.bias_infuser.on_backward_end(
-                    label=label,
-                    out_color=output["preds"]["c"],
-                    out_gray=output["preds"]["g"])
-
-            this_output = {}
-
-
-
-            total_loss =  total_loss.detach().cpu().numpy()
-            output_losses.update({"total": total_loss})
-            this_output.update({
-                    "loss": output_losses,
-                    "pred" : {pred: output["preds"][pred].detach().cpu().numpy() for pred in output["preds"]},
-                   "label": label,
-                   "incomplete": None,
-                    })
-
-
-            return this_output, optstep_done
-
     def _get_loss_weights(self):
 
         w_loss = defaultdict(int)
@@ -330,27 +192,3 @@ class Trainer():
             if "encoders" in config_model.encoders[enc]:
                 for enc_i in range(len(config_model.encoders)):
                     self._freeze_encoders(config_model = config_model.encoders[enc_i], model = getattr(model, "enc_{}".format(enc_i)))
-
-    # def _find_train_step_func(self):
-    #
-    #
-    #
-    #     if "training_type" not in self.agent.config.model.args or self.agent.config.model.args.training_type == "normal":
-    #         train_step_func = "train_one_step_adv" if "adversarial_training" in self.agent.config.training_params and self.agent.config.training_params.adversarial_training.use else "train_one_step"
-    #     elif self.agent.config.model.args.training_type == "colored_mnist":
-    #         train_step_func = "train_one_step_colored_mnist"
-    #     elif self.agent.config.model.args.training_type == "alignment":
-    #         train_step_func = "train_one_step_alignment_adv" if "adversarial_training" in self.agent.config.training_params and self.agent.config.training_params.adversarial_training.use else "train_one_step_alignment"
-    #     elif self.agent.config.model.args.training_type == "alignment_order":
-    #         train_step_func = "train_one_step_alignment_order_adv" if "adversarial_training" in self.agent.config.training_params and self.agent.config.training_params.adversarial_training.use else "train_one_step_alignment_order"
-    #     elif self.agent.config.model.args.training_type == "alignment_order_multisupervised":
-    #         train_step_func = "train_one_step_alignment_order_multisupervised_adv" if "adversarial_training" in self.agent.config.training_params and self.agent.config.training_params.adversarial_training.use else "train_one_step_alignment_order_multisupervised"
-    #     elif self.agent.config.model.args.training_type == "router":
-    #         train_step_func = "train_one_step_router"
-    #     elif self.agent.config.model.args.training_type == "reconstruction":
-    #         train_step_func = "train_one_step_reconstruction"
-    #     else:
-    #         raise ValueError("Training type does not exist, check self.agent.config.model.training_type! Available ones are 'normal', 'alignment' and 'alignment_order' ")
-    #
-    #     print("Training function is {}".format(train_step_func))
-    #     return train_step_func

@@ -10,10 +10,7 @@ class Validator_Tester():
         self.agent = agent
         self.multi_supervised = False
 
-        if self.agent.config.get("task", "classification") == "classification":
-            self.valtest_step_func = "valtest_one_step" #self._find_train_step_func()
-        elif self.agent.config.get("task", "classification") == "regression":
-            self.valtest_step_func = "valtest_one_step_regression"
+        self.valtest_step_func = "valtest_one_step"
 
         self.this_valtest_step_func = getattr(self, self.valtest_step_func)
         self._get_loss_weights()
@@ -72,28 +69,6 @@ class Validator_Tester():
                             total_loss += self.w_loss[k] * ce_loss[k]
                             ce_loss[k] = ce_loss[k].detach()
                             output_losses.update({"ce_loss_{}".format(k): ce_loss[k]})
-
-            total_loss = total_loss.detach()
-            output_losses.update({"total": total_loss})
-            for i in output["preds"]:  output["preds"][i] =  output["preds"][i].detach()
-
-            return {"loss": output_losses,
-                   "pred" : output["preds"],
-                   "label": label}
-
-    def valtest_one_step_regression(self, served_dict, best_model=False):
-
-            data = {view: served_dict["data"][view].cuda() for view in
-                                   served_dict["data"] if type(served_dict["data"][view]) is torch.Tensor }
-            data.update({view: data[view].float() for view in data if type(view) == int})
-
-            label = served_dict["label"].cuda()
-
-            output = self.agent.model(data)
-
-
-            total_loss = torch.nn.L1Loss()(output["preds"]["combined"].flatten(), label)
-            output_losses = {"l1_loss_combined": total_loss}
 
             total_loss = total_loss.detach()
             output_losses.update({"total": total_loss})

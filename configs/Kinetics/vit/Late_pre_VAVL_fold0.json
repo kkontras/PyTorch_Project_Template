@@ -1,0 +1,54 @@
+{
+  "training_params": {
+    "seed": 109,
+    "batch_size": 8,
+    "tdqm_disable": false
+  },
+  "scheduler": {"type":"cosanneal", "max_lr": 0.001, "warm_up_steps": 1500},
+  "optimizer": {
+    "type": "Adam",
+    "learning_rate": 0.000001,
+    "momentum": 0.9,
+    "weight_decay":  5e-4,
+    "beta1": 0.95,
+    "beta2": 0.999
+  },
+  "dataset": {
+      "return_data" : {"video": false, "spectrogram":false, "audio":true, "face": true},
+      "sampling_rate": 16000,
+      "data_split": {
+        "fold": 0
+      }
+  },
+
+  "model": {
+    "model_class": "ConcatClassifier_CREMAD_OGM_pre",
+    "args": {
+      "d_model": 512,
+      "num_classes": 6,
+      "fc_inner": 64,
+      "dropout": 0.1,
+      "shared_pred": true,
+      "cls_type": "linear",
+      "multi_loss": {
+        "multi_supervised_w": {
+             "combined": 1, "c": 0, "g": 0
+          }
+      }
+    },
+    "load_ongoing": false,
+    "save_dir": "pre_VAVL_fold0{}.pth.tar",
+    "encoders": [
+      {
+        "model": "AClassifier_VaVL_linearcls",
+        "args": { "d_model": 512, "num_classes": 6, "fc_inner": 64, "dropout": 0.1, "freeze_encoder": true
+        },
+        "pretrainedEncoder": {"use": true, "dir": "unimodal_audio_VAVL_fold0_lr0.00005_wd5e-6.pth.tar"}
+      },
+      {
+        "model": "VClassifier_FacesVaVL_linearcls",
+        "args": {"d_model": 512, "num_classes": 6, "fc_inner": 64, "dropout": 0.1, "freeze_encoder": true},
+        "pretrainedEncoder": {"use": true, "dir": "unimodal_faces_VAVL_fold0_lr0.00005_wd5e-6.pth.tar"}}
+    ]
+  }
+}
